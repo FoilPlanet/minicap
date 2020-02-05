@@ -14,7 +14,7 @@ default: prebuilt
 
 clean:
 	ndk-build clean
-	rm -rf prebuilt
+	rm -rf prebuilt libs obj
 
 $(NDKBUILT):
 	ndk-build

@@ -18,12 +18,18 @@
 #include <Minicap.hpp>
 
 #include "util/debug.h"
-#include "JpgEncoder.hpp"
 #include "SimpleServer.hpp"
 #include "Projection.hpp"
 
-#define BANNER_VERSION 1
-#define BANNER_SIZE 24
+#ifdef USE_MPP
+# include "MppEncoder.h"
+#else
+# warning "Using JpgEncoder"
+# include "JpgEncoder.hpp"
+#endif
+
+#define BANNER_VERSION  1
+#define BANNER_SIZE     24
 
 #define DEFAULT_SOCKET_NAME "minicap"
 #define DEFAULT_DISPLAY_ID 0
@@ -41,6 +47,7 @@ usage(const char* pname) {
     "Usage: %s [-h] [-n <name>]\n"
     "  -d <id>:       Display ID. (%d)\n"
     "  -n <name>:     Change the name of the abtract unix domain socket. (%s)\n"
+    "  -C <codec>:    Video encoding type ({jpeg|avc}, default is 'jpeg').\n"
     "  -P <value>:    Display projection (<w>x<h>@<w>x<h>/{0|90|180|270}).\n"
     "  -Q <value>:    JPEG quality (0-100).\n"
     "  -s:            Take a screenshot and output it to stdout. Needs -P.\n"
@@ -218,9 +225,10 @@ main(int argc, char* argv[]) {
   bool skipFrames = false;
   bool testOnly = false;
   Projection proj;
+  int coding = -1;
 
   int opt;
-  while ((opt = getopt(argc, argv, "d:n:P:Q:r:siSth")) != -1) {
+  while ((opt = getopt(argc, argv, "d:n:C:P:Q:r:siSth")) != -1) {
     float frameRate;
     switch (opt) {
     case 'd':
@@ -229,6 +237,14 @@ main(int argc, char* argv[]) {
     case 'n':
       sockname = optarg;
       break;
+  #ifdef USE_MPP
+    case 'C': {
+      if (!strcmp(optarg, "avc")) {
+        coding = MppEncoder::VIDEO_CODING_AVC;
+      }
+      break;
+  #endif /* USE_MPP */
+    }
     case 'P': {
       Projection::Parser parser;
       if (!parser.parse(proj, optarg, optarg + strlen(optarg))) {
@@ -356,7 +372,15 @@ main(int argc, char* argv[]) {
 
   // Leave a 4-byte padding to the encoder so that we can inject the size
   // to the same buffer.
+  #ifdef USE_MPP
+  MppEncoder encoder(4, 0);
+  coding = encoder.setEncodeCodec(coding);
+  std::cerr << "INFO: Using codec " << coding << " " 
+            << (coding == MppEncoder::VIDEO_CODING_AVC ? "AVC/H.264" : "JPEG") << std::endl;
+  #else // !USE_MPP
   JpgEncoder encoder(4, 0);
+  #endif // USE_MPP
+
   Minicap::Frame frame;
   bool haveFrame = false;
 

@@ -1,37 +1,49 @@
 LOCAL_PATH := $(call my-dir)
-include $(CLEAR_VARS)
 
+USE_MPP := 1
+
+#
+# minicap-common
+#
+include $(CLEAR_VARS)
 LOCAL_MODULE := minicap-common
 
-LOCAL_SRC_FILES := \
-	JpgEncoder.cpp \
-	SimpleServer.cpp \
-	minicap.cpp \
-
-LOCAL_STATIC_LIBRARIES := \
-	libjpeg-turbo \
+LOCAL_CPPFLAGS  += -fexceptions
+LOCAL_SRC_FILES :=   \
+    minicap.cpp      \
+    SimpleServer.cpp \
 
 LOCAL_SHARED_LIBRARIES := \
-	minicap-shared \
+    minicap-shared \
+
+ifeq ($(USE_MPP),1)
+ LOCAL_CFLAGS += -DUSE_MPP=1
+ LOCAL_STATIC_LIBRARIES += mpp-wrapper jpeg-turbo
+ LOCAL_SHARED_LIBRARIES += libmpp
+else
+ LOCAL_SRC_FILES += JpgEncoder.cpp
+ LOCAL_STATIC_LIBRARIES += jpeg-turbo
+endif
 
 include $(BUILD_STATIC_LIBRARY)
 
-include $(CLEAR_VARS)
-
+#
+# minicap
 # Enable PIE manually. Will get reset on $(CLEAR_VARS).
-LOCAL_CFLAGS += -fPIE
+#
+include $(CLEAR_VARS)
+LOCAL_MODULE  := minicap
+LOCAL_CFLAGS  += -fPIE
 LOCAL_LDFLAGS += -fPIE -pie
-
-LOCAL_MODULE := minicap
-
-LOCAL_STATIC_LIBRARIES := minicap-common
-
+LOCAL_STATIC_LIBRARIES += minicap-common
+LOCAL_SHARED_LIBRARIES += minicap
 include $(BUILD_EXECUTABLE)
 
+#
+# minicap-nopie
+#
 include $(CLEAR_VARS)
-
 LOCAL_MODULE := minicap-nopie
-
-LOCAL_STATIC_LIBRARIES := minicap-common
-
+LOCAL_STATIC_LIBRARIES += minicap-common
+LOCAL_SHARED_LIBRARIES += minicap
 include $(BUILD_EXECUTABLE)
