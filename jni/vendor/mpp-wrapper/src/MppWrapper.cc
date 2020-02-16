@@ -219,13 +219,13 @@ int MppWrapper::init(uint32_t width, uint32_t height, MppCodingType type)
               #if 0
                 if (p->fp_output)
                     fwrite(ptr, 1, len, p->fp_output);
-             #endif
+              #endif
                 packet = NULL;
             }
         } // if (MPP_VIDEO_CodingAVC)
         
         return MPP_OK;
-    }
+    } // while (ret)
 
     // something error
     deinit();

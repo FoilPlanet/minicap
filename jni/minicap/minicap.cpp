@@ -41,11 +41,14 @@ enum {
   QUIRK_TEAR            = 4,
 };
 
+static int socket_fd = -1;
+
 static void
 usage(const char* pname) {
   fprintf(stderr,
     "Usage: %s [-h] [-n <name>]\n"
     "  -d <id>:       Display ID. (%d)\n"
+    "  -f <fd>:       Set sockt fd for output, instead of accepting client.\n"
     "  -n <name>:     Change the name of the abtract unix domain socket. (%s)\n"
     "  -C <codec>:    Video encoding type ({jpeg|avc}, default is 'jpeg').\n"
     "  -P <value>:    Display projection (<w>x<h>@<w>x<h>/{0|90|180|270}).\n"
@@ -114,7 +117,8 @@ private:
 
 static int
 pumps(int fd, unsigned char* data, size_t length) {
-  do {
+
+  while (fd > 0 && length > 0) {
     // Make sure that we don't generate a SIGPIPE even if the socket doesn't
     // exist anymore. We'll still get an EPIPE which is perfect.
     int wrote = send(fd, data, length, MSG_NOSIGNAL);
@@ -126,7 +130,6 @@ pumps(int fd, unsigned char* data, size_t length) {
     data += wrote;
     length -= wrote;
   }
-  while (length > 0);
 
   return 0;
 }
@@ -228,11 +231,14 @@ main(int argc, char* argv[]) {
   int coding = -1;
 
   int opt;
-  while ((opt = getopt(argc, argv, "d:n:C:P:Q:r:siSth")) != -1) {
+  while ((opt = getopt(argc, argv, "d:f:n:C:P:Q:r:siSth")) != -1) {
     float frameRate;
     switch (opt) {
     case 'd':
       displayId = atoi(optarg);
+      break;
+    case 'f':
+      socket_fd = atoi(optarg);
       break;
     case 'n':
       sockname = optarg;
@@ -484,11 +490,13 @@ main(int argc, char* argv[]) {
   banner[23] = quirks;
 
   int fd;
-  while (!gWaiter.isStopped() && (fd = server.accept()) > 0) {
+  while (!gWaiter.isStopped() && (socket_fd >= 0 || (fd = server.accept()) > 0)) {
+    int out_fd = (socket_fd >= 0 ? socket_fd : fd);
+
     MCINFO("New client connection");
 
-    if (pumps(fd, banner, BANNER_SIZE) < 0) {
-      close(fd);
+    if (pumps(out_fd, banner, BANNER_SIZE) < 0) {
+      close(out_fd);
       continue;
     }
 
@@ -543,7 +551,7 @@ main(int argc, char* argv[]) {
 
       putUInt32LE(data, size);
 
-      if (pumps(fd, data, size + 4) < 0) {
+      if (pumps(out_fd, data, size + 4) < 0) {
         break;
       }
 
@@ -558,7 +566,7 @@ main(int argc, char* argv[]) {
 
 close:
     MCINFO("Closing client connection");
-    close(fd);
+    if (fd > 0) close(fd);
 
     // Have we consumed one frame but are still holding it?
     if (haveFrame) {
