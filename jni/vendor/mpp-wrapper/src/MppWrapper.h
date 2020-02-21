@@ -86,6 +86,14 @@ public:
         return m_height;
     }
 
+    /**
+     * Check whether current encoder need yuv (chroma) as input. 
+     * @param coding_type MppCodingType
+     * @return true if input frame needs transform to YUV_420, elsewise just use
+     *         default frame format (FORMAT_RGBA_8888 in android)
+     */
+    bool is_yuv(int coding_type) const;
+
 private:
     MppApi         *m_mpi;
     MppCtx          m_ctx;

@@ -55,21 +55,30 @@ int MppWrapper::init(uint32_t width, uint32_t height, MppCodingType type)
         m_bps = width * height / 8 * m_fps;
         m_qp_init  = (type == MPP_VIDEO_CodingMJPEG) ? (10) : (26);
 
-        m_prep_cfg.change        = MPP_ENC_PREP_CFG_CHANGE_INPUT |
-                                   MPP_ENC_PREP_CFG_CHANGE_ROTATION |
-                                   MPP_ENC_PREP_CFG_CHANGE_FORMAT;
-        m_prep_cfg.width         = m_width  = width;
-        m_prep_cfg.height        = m_height = height;
-        m_prep_cfg.hor_stride    = m_hor_stride = MPP_ALIGN(width, 16);
-        m_prep_cfg.ver_stride    = m_ver_stride = MPP_ALIGN(height, 16);
-        m_prep_cfg.format        = m_fmt = MPP_FMT_ARGB8888; // MPP_FMT_YUV420SP_VU;
-        m_prep_cfg.rotation      = MPP_ENC_ROT_0;
+        m_prep_cfg.change   = MPP_ENC_PREP_CFG_CHANGE_INPUT |
+                              MPP_ENC_PREP_CFG_CHANGE_ROTATION |
+                              MPP_ENC_PREP_CFG_CHANGE_FORMAT;
+        m_prep_cfg.width    = m_width  = width;
+        m_prep_cfg.height   = m_height = height;
+        m_prep_cfg.format   = m_fmt = MPP_FMT_ARGB8888; /* MPP_FMT_YUV420P */        
+        m_prep_cfg.rotation = MPP_ENC_ROT_0;
 
-        // MPP_FMT_YUV420SP_VU
-        // m_frame_size = m_hor_stride * m_ver_stride * 3 / 2;
-        // MPP_FMT_YUV422_UYVY
-        // m_frame_size = m_hor_stride * m_ver_stride
-        m_frame_size = m_hor_stride * m_ver_stride * 4;
+        m_hor_stride = MPP_ALIGN(m_width,  16);;
+        m_ver_stride = MPP_ALIGN(m_height, 16);;
+        if (m_fmt <= MPP_FMT_YUV420SP_VU) {
+            // MPP_FMT_YUV420P etc.
+            m_frame_size = m_hor_stride * m_ver_stride * 3 / 2;
+        } else if (m_fmt <= MPP_FMT_YUV422_UYVY) {
+            // yuyv and uyvy need to double stride
+            m_hor_stride *= 2;
+            m_frame_size = m_hor_stride * m_ver_stride;
+        } else {
+            // MPP_FMT_ARGB8888 and MPP_FMT_ABGR8888
+            m_frame_size = m_hor_stride * m_ver_stride * 4;
+        }
+
+        m_prep_cfg.hor_stride = m_hor_stride;
+        m_prep_cfg.ver_stride = m_ver_stride;
 
         mpp_log_f("%dx%d frame_size=%d\n", m_width, m_height, m_frame_size);
 
@@ -79,7 +88,7 @@ int MppWrapper::init(uint32_t width, uint32_t height, MppCodingType type)
         }
 
         m_rc_cfg.change  = MPP_ENC_RC_CFG_CHANGE_ALL;
-        m_rc_cfg.rc_mode = MPP_ENC_RC_MODE_VBR; /* MPP_ENC_RC_MODE_CBR */
+        m_rc_cfg.rc_mode = MPP_ENC_RC_MODE_VBR;       /* MPP_ENC_RC_MODE_CBR */
         m_rc_cfg.quality = MPP_ENC_RC_QUALITY_MEDIUM; /* MPP_ENC_RC_QUALITY_CQP*/
 
         if (m_rc_cfg.quality == MPP_ENC_RC_QUALITY_CQP) {
@@ -200,8 +209,11 @@ int MppWrapper::init(uint32_t width, uint32_t height, MppCodingType type)
         /* gen and cfg osd plt */
         mpi_enc_gen_osd_plt(&m_osd_plt, m_plt_table);
         if (MPP_OK != (ret = m_mpi->control(m_ctx, MPP_ENC_SET_OSD_PLT_CFG, &m_osd_plt))) {
-            mpp_err("mpi control enc set osd plt failed ret %d\n", ret);
+            // rockchip vepu2 do not support osd cfg, just ignore
+          #if 0
+            mpp_error("mpi control enc set osd plt failed ret %d\n", ret);
             break;
+          #endif
         }
 
         // test_mpp_preprare(): get and write sps/pps for H.264
@@ -247,6 +259,8 @@ void MppWrapper::deinit()
         m_ctx = nullptr;
         m_mpi = nullptr;
     }
+
+    mpp_log_f("\n");
 }
 
 MppPacket MppWrapper::encode_get_packet(MppBuffer frmbuf, MppFrameFormat frmfmt)
@@ -261,7 +275,7 @@ MppPacket MppWrapper::encode_get_packet(MppBuffer frmbuf, MppFrameFormat frmfmt)
         return nullptr;
     }
 
-    mpp_log_f("%ux%u %u:%u\n", m_width, m_height, m_hor_stride, m_ver_stride);
+    mpp_log_f("%ux%u stride %u:%u\n", m_width, m_height, m_hor_stride, m_ver_stride);
 
     mpp_frame_set_width(frame, m_width);
     mpp_frame_set_height(frame, m_height);
@@ -290,10 +304,19 @@ MppPacket MppWrapper::encode_get_packet(MppBuffer frmbuf, MppFrameFormat frmfmt)
     } while (nullptr == packet);
 
     if (nullptr != packet) {
-        //pkt_ptr = mpp_packet_get_pos(packet);
-        //pkt_len = mpp_packet_get_length(packet);
-        //pkt_eos = mpp_packet_get_eos(packet);
+        // void    *pkt_ptr = mpp_packet_get_pos(packet);
+        // unsigned pkt_eos = mpp_packet_get_eos(packet);
+        // size_t   pkt_len = mpp_packet_get_length(packet);
     }
 
     return packet;
+}
+
+bool MppWrapper::is_yuv(int coding_type) const
+{
+#if defined(__x86_64) || defined(__x86_64__)
+    return coding_type == MPP_VIDEO_CodingAVC;
+#else
+    return false;
+#endif
 }

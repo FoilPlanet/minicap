@@ -94,19 +94,21 @@ size_t rgba2yuv(void *yuv, const void *rgb, size_t rgb_size, int w, int h)
     return tjBufSizeYUV2(w, padding, h, subsample);
 }
 
+static MppBuffer frmbuf = nullptr;
+
 bool MppEncoder::encode(Minicap::Frame *frame, unsigned int quality)
 {
-    MppBuffer frmbuf;
-
     mpp_log_f("frame s:%d fmt:%d q:%u\n", frame->size, frame->format, quality);
 
     RK_S64 start = mpp_time();
 
     // TODO: use buffer allocated from Surfaceflinger (mpp_buffer_get_fd / MPP_BUFFER_TYPE_ION)
-    while (nullptr == (frmbuf = mMppInstance->get_buffer())) {
-        mpp_err_f("get_buffer timeout\n");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1)); // usleep(1000);
-        // return false;
+    while (nullptr == frmbuf) {
+        if (nullptr == (frmbuf = mMppInstance->get_buffer())) {
+            mpp_err_f("get_buffer timeout\n");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1)); // usleep(1000);
+            // return false;
+        }
     }
 
     // mpp_log_f("stride: %u \n", frame->stride * frame->bpp);
@@ -114,24 +116,24 @@ bool MppEncoder::encode(Minicap::Frame *frame, unsigned int quality)
         mMppInstance->put_packet(mPacket);
     }
 
-    MppFrameFormat frmfmt = MPP_FMT_RGB888;
-    if (mEncodeCodec == VIDEO_CODING_AVC) {
-        // transform RGBA_8888 to YUV-I420
+    MppFrameFormat mppfmt = MPP_FMT_RGB888;
+    if (mMppInstance->is_yuv(mEncodeCodec)) {
+        // transform FORMAT_RGBA_8888 to YUV-I420
         int bsize = rgba2yuv(mpp_buffer_get_ptr(frmbuf), frame->data, frame->size,
                              mMppInstance->get_width(), mMppInstance->get_height());
-        frmfmt = MPP_FMT_YUV420P;
+        mppfmt = MPP_FMT_YUV420P;
     } else {
         // encoder format is same to frame (e.g. FORMAT_RGBA_8888)
         memcpy(mpp_buffer_get_ptr(frmbuf), frame->data, frame->size);
-        frmfmt = convertFormat(frame->format);
+        mppfmt = convertFormat(frame->format);
     }
 
-    mPacket = mMppInstance->encode_get_packet(frmbuf, frmfmt);
-    mMppInstance->put_buffer(frmbuf);
+    mPacket = mMppInstance->encode_get_packet(frmbuf, mppfmt);
+    // mMppInstance->put_buffer(frmbuf);
 
     if (mPacket != nullptr) {
-        void  *pkt_ptr = mpp_packet_get_pos(mPacket);
-        size_t pkt_len = mpp_packet_get_length(mPacket);
+        uint8_t *pkt_ptr = (uint8_t *)mpp_packet_get_pos(mPacket);
+        size_t   pkt_len = mpp_packet_get_length(mPacket);
         // pkt_eos = mpp_packet_get_eos(packet);
 
         mpp_log_f("packet s:%u cost %lld us\n", pkt_len, mpp_time() - start);
