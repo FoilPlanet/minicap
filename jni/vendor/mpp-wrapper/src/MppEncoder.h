@@ -45,6 +45,8 @@ public:
         return mEncodeCodec;
     }
 
+    size_t getSyncPacket(unsigned char **ppkt);
+
 private:
     MppWrapper     *mMppInstance;
     void           *mPacket;

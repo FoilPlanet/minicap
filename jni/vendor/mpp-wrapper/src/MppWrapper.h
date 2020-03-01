@@ -86,6 +86,10 @@ public:
         return m_height;
     }
 
+    MppPacket get_sync_packet() {
+        return m_sync_packet;
+    }
+
     /**
      * Check whether current encoder need yuv (chroma) as input. 
      * @param coding_type MppCodingType
@@ -131,4 +135,7 @@ private:
     RK_S32          m_qp_max;
     RK_S32          m_qp_step;
     RK_S32          m_qp_init;
+
+    // members depends on encoder and codec
+    MppPacket       m_sync_packet;          /**< header sync packet (pps/sps) */
 };

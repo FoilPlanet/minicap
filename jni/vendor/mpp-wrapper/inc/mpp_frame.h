@@ -41,6 +41,10 @@
 // for multiview stream
 #define MPP_FRAME_FLAG_VIEW_ID_MASK     (0x000000f0)
 
+#define MPP_FRAME_FLAG_IEP_DEI_MASK     (0x00000f00)
+#define MPP_FRAME_FLAG_IEP_DEI_I2O1     (0x00000100)
+#define MPP_FRAME_FLAG_IEP_DEI_I4O2     (0x00000200)
+#define MPP_FRAME_FLAG_IEP_DEI_I4O1     (0x00000300)
 
 /*
  * MPEG vs JPEG YUV range.
@@ -148,6 +152,9 @@ typedef enum {
 #define MPP_FRAME_FMT_RGB     0x00010000
 #define MPP_FRAME_FMT_COMPLEX 0x00020000
 
+#define MPP_FRAME_FMT_IS_YUV(fmt)   ((fmt >= MPP_FRAME_FMT_YUV && fmt < MPP_FMT_YUV_BUTT))
+#define MPP_FRAME_FMT_IS_RGB(fmt)   ((fmt >= MPP_FRAME_FMT_RGB && fmt < MPP_FMT_RGB_BUTT))
+
 /*
  *mpp color format define
  */
@@ -165,7 +172,9 @@ typedef enum {
     MPP_FMT_YUV422P,                                    /* YYYY... UU...VV...(422P) */
     MPP_FMT_YUV422SP_VU,                                /* YYYY... VUVUVU... (NV61) */
     MPP_FMT_YUV422_YUYV,                                /* YUYVYUYV... (YUY2)       */
+    MPP_FMT_YUV422_YVYU,                                /* YVYUYVYU... (YVY2)       */
     MPP_FMT_YUV422_UYVY,                                /* UYVYUYVY... (UYVY)       */
+    MPP_FMT_YUV422_VYUY,                                /* VYUYVYUY... (VYUY)       */
     MPP_FMT_YUV400,                                     /* YYYY...                  */
     MPP_FMT_YUV440SP,                                   /* YYYY... UVUV...          */
     MPP_FMT_YUV411SP,                                   /* YYYY... UV...            */
@@ -183,6 +192,8 @@ typedef enum {
     MPP_FMT_BGR101010,                                  /* 30-bit RGB               */
     MPP_FMT_ARGB8888,                                   /* 32-bit RGB               */
     MPP_FMT_ABGR8888,                                   /* 32-bit RGB               */
+    MPP_FMT_BGRA8888,                                   /* 32-bit RGB               */
+    MPP_FMT_RGBA8888,                                   /* 32-bit RGB               */
     MPP_FMT_RGB_BUTT,
     /* simliar to I420, but Pixels are grouped in macroblocks of 8x4 size  */
     MPP_FMT_YUV420_8Z4      = MPP_FRAME_FMT_COMPLEX,
@@ -272,6 +283,7 @@ void    mpp_frame_set_buffer(MppFrame frame, MppBuffer buffer);
  * meta data parameter
  */
 MppMeta mpp_frame_get_meta(const MppFrame frame);
+void    mpp_frame_set_meta(MppFrame frame, MppMeta meta);
 
 /*
  * color related parameter

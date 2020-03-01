@@ -41,7 +41,7 @@ enum {
   QUIRK_TEAR            = 4,
 };
 
-static int socket_fd = -1;
+static int preset_fd = -1;
 
 static void
 usage(const char* pname) {
@@ -160,6 +160,12 @@ putUInt32LE(unsigned char* data, int value) {
   return 0;
 }
 
+static int send_minicap_packet(int fd, unsigned char *data, size_t size)
+{
+  putUInt32LE(data, size);
+  return pumps(fd, data, size + 4);
+}
+
 static int
 try_get_framebuffer_display_info(uint32_t displayId, Minicap::DisplayInfo* info) {
   char path[64];
@@ -238,7 +244,7 @@ main(int argc, char* argv[]) {
       displayId = atoi(optarg);
       break;
     case 'f':
-      socket_fd = atoi(optarg);
+      preset_fd = atoi(optarg);
       break;
     case 'n':
       sockname = optarg;
@@ -490,15 +496,24 @@ main(int argc, char* argv[]) {
   banner[23] = quirks;
 
   int fd;
-  while (!gWaiter.isStopped() && (socket_fd >= 0 || (fd = server.accept()) > 0)) {
-    int out_fd = (socket_fd >= 0 ? socket_fd : fd);
+  while (!gWaiter.isStopped() && (preset_fd >= 0 || (fd = server.accept()) > 0)) {
+    int client_fd = (preset_fd >= 0 ? preset_fd : fd);
 
     MCINFO("New client connection");
 
-    if (pumps(out_fd, banner, BANNER_SIZE) < 0) {
-      close(out_fd);
+    if (pumps(client_fd, banner, BANNER_SIZE) < 0) {
+      close(client_fd);
       continue;
     }
+
+    // Send pps/sps for sync header in H.264
+  #ifdef USE_MPP
+    unsigned char *sync_data = NULL;
+    size_t sync_size = encoder.getSyncPacket(&sync_data);
+    if (sync_size > 0 && sync_data) {
+      (void)send_minicap_packet(client_fd, sync_data, sync_size);
+    }
+  #endif /* USE_MPP */
 
     int pending, err;
     while (!gWaiter.isStopped() && (pending = gWaiter.waitForFrame()) > 0) {
@@ -549,9 +564,7 @@ main(int argc, char* argv[]) {
       unsigned char* data = encoder.getEncodedData() - 4;
       size_t size = encoder.getEncodedSize();
 
-      putUInt32LE(data, size);
-
-      if (pumps(out_fd, data, size + 4) < 0) {
+      if (send_minicap_packet(client_fd, data, size) < 0) {
         break;
       }
 

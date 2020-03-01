@@ -128,6 +128,8 @@ bool MppEncoder::encode(Minicap::Frame *frame, unsigned int quality)
         mppfmt = convertFormat(frame->format);
     }
 
+    // mpp_log_f("mpp format %d", mppfmt);
+
     mPacket = mMppInstance->encode_get_packet(frmbuf, mppfmt);
     // mMppInstance->put_buffer(frmbuf);
 
@@ -138,8 +140,8 @@ bool MppEncoder::encode(Minicap::Frame *frame, unsigned int quality)
 
         mpp_log_f("packet s:%u cost %lld us\n", pkt_len, mpp_time() - start);
 
-        // memcpy(getEncodedData(), pkt_ptr, pkt_len);
         mEncodedSize = pkt_len;
+
         return true;
     }
 
@@ -154,11 +156,7 @@ int MppEncoder::getEncodedSize()
 unsigned char *MppEncoder::getEncodedData()
 {
     unsigned char *pbuf;
-#if 0
-    pbuf = reinterpret_cast<unsigned char *>(mpp_buffer_get_ptr(mEncodedData));
-#else
     pbuf = reinterpret_cast<unsigned char *>(mpp_packet_get_pos(mPacket));
-#endif
     return pbuf + mPrePadding;
 }
 
@@ -172,14 +170,18 @@ MppEncoder::reserveData(uint32_t width, uint32_t height)
     mMaxWidth  = MPP_ALIGN(width, 16);
     mMaxHeight = MPP_ALIGN(height, 16);
 
-#if 0
-    size_t maxSize = mPrePadding + mPostPadding;
-    maxSize += mMaxWidth * mMaxWidth * 4;
-
-    mpp_log("Allocating %ld bytes for mpp encoder\n", maxSize);
-#endif
-
     mMppInstance->init(width, height, static_cast<MppCodingType>(mEncodeCodec));
 
     return true;
+}
+
+size_t MppEncoder::getSyncPacket(unsigned char **ppkt)
+{
+    MppPacket packet = mMppInstance->get_sync_packet();
+    mpp_assert(ppkt != nullptr);
+    if (packet != nullptr) {
+        *ppkt = (unsigned char *)mpp_packet_get_pos(packet);
+        return mpp_packet_get_length(packet);
+    }
+    return 0;
 }

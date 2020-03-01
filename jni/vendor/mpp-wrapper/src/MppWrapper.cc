@@ -12,10 +12,25 @@
 #include <thread>
 #include <chrono>
 
+//!< AVC Profile IDC definitions (\ref mpp/common/h264_syntax.h)
+enum H264Profile {
+    H264_PROFILE_FREXT_CAVLC444     = 44,   //!< YUV 4:4:4/14 "CAVLC 4:4:4"
+    H264_PROFILE_BASELINE           = 66,   //!< YUV 4:2:0/8  "Baseline"
+    H264_PROFILE_MAIN               = 77,   //!< YUV 4:2:0/8  "Main"
+    H264_PROFILE_EXTENDED           = 88,   //!< YUV 4:2:0/8  "Extended"
+    H264_PROFILE_HIGH               = 100,  //!< YUV 4:2:0/8  "High"
+    H264_PROFILE_HIGH10             = 110,  //!< YUV 4:2:0/10 "High 10"
+    H264_PROFILE_MVC_HIGH           = 118,  //!< YUV 4:2:0/8  "Multiview High"
+    H264_PROFILE_STEREO_HIGH        = 128,  //!< YUV 4:2:0/8  "Stereo High"
+    H264_PROFILE_HIGH422            = 122,  //!< YUV 4:2:2/10 "High 4:2:2"
+    H264_PROFILE_HIGH444            = 244   //!< YUV 4:4:4/14 "High 4:4:4"
+};
+
 MppWrapper::MppWrapper()
   : m_mpi(nullptr), 
     m_ctx(nullptr),
-    m_fps(30)
+    m_fps(30),
+    m_sync_packet(nullptr)
 {
     // NOTHING
 }
@@ -50,9 +65,8 @@ int MppWrapper::init(uint32_t width, uint32_t height, MppCodingType type)
     
         // allocate success, setup default parameter
         m_type = type;
-     // m_fps = 30;
-        m_gop = 60;
-        m_bps = width * height / 8 * m_fps;
+        m_gop  = m_fps * 2;     // 60
+        m_bps  = width * height / 8 * m_fps;
         m_qp_init  = (type == MPP_VIDEO_CodingMJPEG) ? (10) : (26);
 
         m_prep_cfg.change   = MPP_ENC_PREP_CFG_CHANGE_INPUT |
@@ -135,7 +149,7 @@ int MppWrapper::init(uint32_t width, uint32_t height, MppCodingType type)
             * 77  - Main profile
             * 100 - High profile
             */
-            m_codec_cfg.h264.profile  = 100;
+            m_codec_cfg.h264.profile  = H264_PROFILE_BASELINE;
 
             /*
             * H.264 level_idc parameter
@@ -146,9 +160,13 @@ int MppWrapper::init(uint32_t width, uint32_t height, MppCodingType type)
             * 50 / 51 / 52         - 4K@30fps
             */
             m_codec_cfg.h264.level    = 40;
-            m_codec_cfg.h264.entropy_coding_mode  = 1;
             m_codec_cfg.h264.cabac_init_idc  = 0;
-            m_codec_cfg.h264.transform8x8_mode = 1;
+
+            m_codec_cfg.h264.entropy_coding_mode = 
+                (m_codec_cfg.h264.profile <= H264_PROFILE_BASELINE) ? 0 : 1;
+
+            m_codec_cfg.h264.transform8x8_mode = 
+                (m_codec_cfg.h264.profile < H264_PROFILE_HIGH) ? 0 : 1;
 
             if (m_rc_cfg.quality == MPP_ENC_RC_QUALITY_CQP) {
                 /* constant QP mode qp is fixed */
@@ -210,29 +228,31 @@ int MppWrapper::init(uint32_t width, uint32_t height, MppCodingType type)
         mpi_enc_gen_osd_plt(&m_osd_plt, m_plt_table);
         if (MPP_OK != (ret = m_mpi->control(m_ctx, MPP_ENC_SET_OSD_PLT_CFG, &m_osd_plt))) {
             // rockchip vepu2 do not support osd cfg, just ignore
-          #if 0
-            mpp_error("mpi control enc set osd plt failed ret %d\n", ret);
-            break;
-          #endif
+            // mpp_err("mpi control enc set osd plt failed ret %d\n", ret);
+            // break;
         }
 
         // test_mpp_preprare(): get and write sps/pps for H.264
         if (m_type == MPP_VIDEO_CodingAVC) {
             MppPacket packet = NULL;
+            // encoder_version v2
+            // if (MPP_OK != (ret = m_mpi->control(m_ctx, MPP_ENC_GET_HDR_SYNC, &packet))) {
             if (MPP_OK != (ret = m_mpi->control(m_ctx, MPP_ENC_GET_EXTRA_INFO, &packet))) {
                 mpp_err("mpi control enc get extra info failed\n");
-                break;
+                // break;
             }
 
             /* get and write sps/pps for H.264 */
             if (packet) {
-                void  *ptr  = mpp_packet_get_pos(packet);
-                size_t len  = mpp_packet_get_length(packet);
-              #if 0
-                if (p->fp_output)
-                    fwrite(ptr, 1, len, p->fp_output);
-              #endif
-                packet = NULL;
+                uint8_t *ptr = (uint8_t *)mpp_packet_get_pos(packet);
+                size_t   len = mpp_packet_get_length(packet);
+                mpp_log("got sps/pps packet-%02x %d bytes", ptr[4], len);
+
+                // Save this sps/pps packet for future use
+                m_sync_packet = packet;
+
+                // according to MPP document, this packet needs not release
+                // put_packet(packet);
             }
         } // if (MPP_VIDEO_CodingAVC)
         
@@ -316,7 +336,11 @@ bool MppWrapper::is_yuv(int coding_type) const
 {
 #if defined(__x86_64) || defined(__x86_64__)
     return coding_type == MPP_VIDEO_CodingAVC;
+#elif defined(__aarch64__) || defined(__ARM_ARCH_8__)
+    // Assuming ARMv8 SoC has embeded VPU to handle RGBA (e.g. RK3399)
+    return false;
 #else
+# warning "unknown platform, assuming YUV420 is required"
     return false;
 #endif
 }
